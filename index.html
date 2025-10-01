@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="ko">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>서울 자치구별 CCTV 설치 대비 범죄 발생량 분석 지도</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+    <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-geosearch@3.11.1/dist/geosearch.css"/>
+    <script src="https://unpkg.com/leaflet-geosearch@3.11.1/dist/geosearch.umd.js"></script>
+    <style>
+        html, body { height: 100%; margin: 0; }
+        #map { height: 100%; width: 100%; }
+        .map-title {
+            position: absolute; z-index: 1000; left: 12px; top: 12px;
+            background: rgba(255,255,255,0.95);
+            border-radius: 12px; padding: 10px 12px; box-shadow: 0 2px 10px rgba(0,0,0,.1);
+            font-size: 16px; line-height: 1.2; color: #111; font-weight: 700;
+        }
+        #yearSelector {
+            position: absolute; z-index: 1000; left: 12px; top: 60px;
+            padding: 8px; border-radius: 8px; border: 1px solid #ccc;
+            font-size: 14px;
+        }
+        /* 색상 범례 컨테이너 스타일 */
+        #legend {
+            position: absolute; z-index: 1000; left: 12px; top: 110px; 
+            background: rgba(255,255,255,0.95);
+            padding: 10px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,.1);
+            font-size: 12px; line-height: 1.5;
+            min-width: 280px;
+        }
+        .legend-section { margin-top: 5px; padding-top: 5px; }
+        .legend-item { display: flex; align-items: center; justify-content: space-between; margin-bottom: 3px; }
+        .legend-color {
+            width: 15px; height: 15px; border: 1px solid #333; margin-right: 6px;
+        }
+
+        /* 마커 크기 및 스타일 조정 */
+        .custom-marker div { 
+            border-radius: 50%;
+            border: 3px solid white;
+            box-shadow: 0 0 8px rgba(0,0,0,0.6);
+            font-size: 0; 
+            transition: all 0.3s ease; 
+        }
+        /* 마커 툴팁 스타일: 자치구 이름이 항상 표시되도록 */
+        .leaflet-tooltip {
+            background-color: transparent !important;
+            border: none !important;
+            color: #111 !important;
+            font-weight: 700; 
+            font-size: 11px; 
+            padding: 0;
+            white-space: nowrap;
+            text-shadow: 1px 1px 2px #fff; 
+            opacity: 1 !important; 
+        }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    <div id="mapTitle" class="map-title">서울 자치구별 CCTV 설치 대비 범죄 발생량 분석 (2024년 기준)</div>
+    
+    <select id="yearSelector">
+        <option value="2024">2024년</option>
+        <option value="2023">2023년</option>
+        <option value="2022">2022년</option>
+        <option value="2021">2021년</option>
+        <option value="2020">2020년</option>
+    </select>
+
+    <div id="legend">
+        </div>
+
+    <script>
+    // 📌 1. 융합 데이터 (CCTV 및 범죄 발생 현황)
+    const MERGED_DATA = {"종로구": [227, 85, 228, 981, 987, 3102, 2712, 3138, 2981, 2765, 37.59918, 126.98687], "중구": [345, 404, 137, 138, 582, 3411, 2861, 3071, 3348, 2955, 37.56385, 126.99723], "용산구": [622, 430, 458, 407, 654, 2969, 2381, 2967, 3021, 3322, 37.53239, 126.99037], "성동구": [387, 294, 170, 316, 207, 2362, 2112, 2194, 2023, 2117, 37.551, 127.04257], "광진구": [194, 739, 276, 348, 1015, 3601, 3087, 3619, 3424, 2870, 37.54823, 127.08575], "동대문구": [229, 226, 317, 753, 863, 3409, 2806, 3217, 3390, 3280, 37.57469, 127.03975], "중랑구": [989, 604, 336, 684, 894, 3669, 3051, 3604, 3408, 3230, 37.60677, 127.09278], "성북구": [202, 374, 340, 408, 1064, 3144, 2690, 3280, 3226, 3244, 37.60677, 127.027], "강북구": [538, 393, 639, 373, 840, 2779, 2269, 2959, 2841, 2805, 37.63777, 127.02534], "도봉구": [151, 544, 530, 636, 585, 2191, 1878, 2378, 2341, 2465, 37.66874, 127.04712], "노원구": [382, 213, 161, 623, 1352, 3354, 2788, 3405, 3405, 3360, 37.65383, 127.05607], "은평구": [451, 571, 502, 466, 874, 3381, 2867, 3465, 3302, 3177, 37.61918, 126.92723], "서대문구": [613, 425, 213, 422, 425, 3330, 2664, 3158, 3060, 3004, 37.57948, 126.93666], "마포구": [239, 164, 70, 736, 473, 3139, 2724, 3505, 3370, 3099, 37.56619, 126.9015], "양천구": [346, 355, 388, 993, 583, 3175, 2717, 3463, 3528, 3173, 37.52737, 126.8654], "강서구": [361, 435, 604, 429, 1056, 3486, 3034, 3960, 4122, 3959, 37.56158, 126.82282], "구로구": [752, 690, 337, 486, 1322, 4016, 3350, 4242, 4165, 4059, 37.4952, 126.88768], "금천구": [516, 207, 304, 824, 750, 2707, 2337, 2707, 2768, 2796, 37.45688, 126.90224], "영등포구": [1300, 288, 438, 438, 755, 4976, 3647, 4434, 4101, 3986, 37.52554, 126.91138], "동작구": [430, 31, 359, 427, 769, 2981, 2453, 3046, 3072, 3096, 37.49603, 126.93922], "관악구": [401, 550, 138, 743, 1051, 4426, 3777, 4771, 4596, 4496, 37.47831, 126.95531], "서초구": [419, 565, 878, 457, 641, 3719, 3371, 4118, 4153, 3940, 37.48364, 127.03254], "강남구": [677, 491, 585, 869, 588, 4991, 4268, 5171, 5064, 4768, 37.51737, 127.04738], "송파구": [263, 175, 373, 941, 747, 4005, 3334, 4390, 4488, 4118, 37.51457, 127.10664], "강동구": [614, 262, 381, 359, 688, 3450, 2872, 3816, 3788, 3583, 37.55018, 127.14725]};
+    
+    // 🚨 년도별 데이터 인덱스 매핑 및 시작 인덱스
+    const YEAR_INDEX = { "2020": 0, "2021": 1, "2022": 2, "2023": 3, "2024": 4 };
+    const CCTV_DATA_START_INDEX = 0; // CCTV 데이터는 0번 인덱스부터 시작 ([0]~[4])
+    const CRIME_DATA_START_INDEX = 5; // 범죄 데이터는 5번 인덱스부터 시작 ([5]~[9])
+    
+    // 📌 2. 맵 초기화
+    const map = L.map('map', { center: [37.5665, 126.9780], zoom: 11, scrollWheelZoom: true });
+    
+    // 💡 지도 타일 서버 (OpenStreetMap 표준)
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: 'Map data © OpenStreetMap contributors'
+    }).addTo(map);
+
+    const markers = L.markerClusterGroup({ showCoverageOnHover: false, spiderfyOnMaxZoom: true });
+    
+    // 📌 3. 시각화 스케일 함수
+
+    // CCTV 설치 대비 범죄 발생량 (Rate)에 따라 색상 결정 (4단계)
+    function getRateColor(rate_value) {
+        if (rate_value > 800) return '#d73027'; // 진한 빨강 (800건 초과)
+        if (rate_value > 600) return '#fc8d59';  // 주황
+        if (rate_value > 400) return '#91bfdb';  // 연한 파랑
+        return '#4575b4';                          // 진한 파랑 (400건 이하)
+    }
+    
+    // CCTV 설치 수 (Count)에 따라 마커 크기 결정 (범위 극대화)
+    const CCTV_COUNT_MIN = 200; 
+    const CCTV_COUNT_MAX = 1400; 
+    const SIZE_MIN = 10;    
+    const SIZE_MAX = 150;   
+
+    function getCCTVSize(cctv_count) {
+        const normalized = Math.max(0, Math.min(1, (cctv_count - CCTV_COUNT_MIN) / (CCTV_COUNT_MAX - CCTV_COUNT_MIN)));
+        const scaled = Math.sqrt(normalized); 
+        return Math.round(SIZE_MIN + scaled * (SIZE_MAX - SIZE_MIN));
+    }
+    
+    // 📌 4. 마커 업데이트 및 시각화 주 함수 (년도별 데이터 선택 포함)
+    function updateMapData() {
+        const selectedYear = document.getElementById('yearSelector').value;
+        const cctvIndex = YEAR_INDEX[selectedYear] + CCTV_DATA_START_INDEX;
+        const crimeIndex = YEAR_INDEX[selectedYear] + CRIME_DATA_START_INDEX;
+
+        markers.clearLayers(); 
+
+        Object.keys(MERGED_DATA).forEach(gu_name => {
+            const dataRow = MERGED_DATA[gu_name];
+            const cctvCount = dataRow[cctvIndex]; 
+            const crimeCount = dataRow[crimeIndex];
+            const lat = dataRow[10]; 
+            const lng = dataRow[11]; 
+            
+            // 1. CCTV 100대당 범죄 비율 (색상) 계산
+            const rateValue = (cctvCount > 0) ? Math.round((crimeCount / cctvCount) * 100) : 0;
+            
+            // 2. 시각화 값 결정 (최종 요청 반영: 색상=필요성, 크기=설치수)
+            const markerColor = getRateColor(rateValue);   // 색상 = CCTV 설치 대비 범죄 발생량
+            const markerSize = getCCTVSize(cctvCount);     // 크기 = CCTV 설치 수
+
+            // 마커 스타일 적용
+            const customIcon = L.divIcon({
+                className: `custom-marker`,
+                html: `<div style="background-color: ${markerColor}; width: ${markerSize}px; height: ${markerSize}px;"></div>`, 
+                iconSize: [markerSize, markerSize],
+                iconAnchor: [markerSize / 2, markerSize / 2]
+            });
+
+            const popupHtml = `
+                <div>
+                    <b>${gu_name} (${selectedYear}년)</b><br/>
+                    <small>CCTV 설치 수 (크기): ${cctvCount.toLocaleString()}대</small><br/>
+                    <small>실제 범죄 발생량: ${crimeCount.toLocaleString()}건</small><br/>
+                    <hr style="margin: 4px 0;">
+                    <b>CCTV 설치 대비 범죄 발생량 (색상): ${rateValue.toLocaleString()}건</b>
+                </div>`;
+            
+            const m = L.marker([lat, lng], { icon: customIcon });
+            m.bindPopup(popupHtml);
+            
+            // 📌 자치구 이름을 마커 근처에 영구적으로 표시
+            m.bindTooltip(gu_name, { permanent: true, direction: 'right', className: 'leaflet-tooltip' });
+
+            markers.addLayer(m);
+        });
+        
+        map.addLayer(markers);
+
+        // 제목 및 범례 업데이트
+        document.getElementById('mapTitle').innerText = `서울 자치구별 CCTV 설치 대비 범죄 발생량 분석 (${selectedYear}년 기준)`;
+        
+        // 📌 범례 내용 업데이트
+        const legendDiv = document.getElementById('legend');
+        let html = `<b>분석 범례 (${selectedYear}년 기준)</b>`;
+        
+        // 색상 기준 (CCTV 설치 대비 범죄 발생량)
+        html += `<div class="legend-section"><b>색상: CCTV 설치 대비 범죄 발생량 (CCTV 100대당 건수)</b></div>`;
+        html += `<div class="legend-item"><span><div class="legend-color" style="background-color: #d73027;"></div>800건 초과 (가장 높음)</span></div>`;
+        html += `<div class="legend-item"><span><div class="legend-color" style="background-color: #fc8d59;"></div>601건 ~ 800건</span></div>`;
+        html += `<div class="legend-item"><span><div class="legend-color" style="background-color: #91bfdb;"></div>401건 ~ 600건</span></div>`;
+        html += `<div class="legend-item"><span><div class="legend-color" style="background-color: #4575b4;"></div>400건 이하 (가장 낮음)</span></div>`;
+
+        // 크기 기준 (CCTV 설치 수)
+        html += `<div class="legend-section"><b>크기: CCTV 설치 수 (투자 규모)</b></div>`;
+        html += `<div class="legend-item"><span><div class="legend-color" style="background-color: #ccc; width:150px; height:150px; border-radius:50%; margin-left: 10px;"></div>${CCTV_COUNT_MAX}대 내외 (가장 큰 규모)</span></div>`;
+        html += `<div class="legend-item"><span><div class="legend-color" style="background-color: #ccc; width:50px; height:50px; border-radius:50%; margin-left: 10px;"></div>약 700대 내외</span></div>`;
+        html += `<div class="legend-item"><span><div class="legend-color" style="background-color: #ccc; width:10px; height:10px; border-radius:50%; margin-left: 10px;"></div>${CCTV_COUNT_MIN}대 내외 (가장 작은 규모)</span></div>`;
+        
+        legendDiv.innerHTML = html;
+    }
+    
+    // 📌 5. 이벤트 리스너 설정 및 초기 로드
+    
+    // 년도 선택 드롭다운에 이벤트 리스너 연결
+    document.getElementById('yearSelector').addEventListener('change', updateMapData);
+
+    // 초기 로드
+    updateMapData();
+
+    // 📌 6. GeoSearch 검색 컨트롤 추가
+    const provider = new GeoSearch.OpenStreetMapProvider();
+    const searchControl = new GeoSearch.GeoSearchControl({
+        provider: provider, style: 'bar', showMarker: true, showPopup: false, autoClose: true,
+        retainZoomLevel: false, animateZoom: true, searchLabel: '주소 또는 장소 검색', notFoundMessage: '검색 결과가 없습니다.',
+    });
+    map.addControl(searchControl);
+    </script>
+</body>
+</html>
